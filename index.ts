@@ -76,9 +76,63 @@ function run(command: string, args: string[], dryRunPublishOnly = true): void {
   if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed with exit code ${result.status}`);
 }
 
-function generateDiagram(): void {
-  writeFileSync(GENERATED_GRAPH_SCRIPT, EMBEDDED_GRAPH_SCRIPT);
-  console.log(`Generating/publishing diagram with embedded script via ${GENERATED_GRAPH_SCRIPT}...`);
+const FIFA_CODE_TO_FLAG: Record<string, string> = {
+  RSA: "za", CAN: "ca", BRA: "br", JPN: "jp", GER: "de", PAR: "py",
+  NED: "nl", MAR: "ma", CIV: "ci", NOR: "no", FRA: "fr", SWE: "se",
+  MEX: "mx", ECU: "ec", ENG: "gb", COD: "cd", BEL: "be", SEN: "sn",
+  USA: "us", BIH: "ba", ESP: "es", AUT: "at", POR: "pt", CRO: "hr",
+  SUI: "ch", ALG: "dz", AUS: "au", EGY: "eg", ARG: "ar", CPV: "cv",
+  COL: "co", GHA: "gh",
+};
+
+const STAGE_TO_ROUND: Record<string, { id: string; matches: number }> = {
+  "289287": { id: "round-of-32", matches: 16 },
+  "289288": { id: "round-of-16", matches: 8 },
+  "289289": { id: "quarter-finals", matches: 4 },
+  "289290": { id: "semi-finals", matches: 2 },
+  "289292": { id: "final", matches: 1 },
+};
+
+function isConcreteTeam(team?: FifaTeam): boolean {
+  const code = team?.IdCountry;
+  return !!code && !/^W\d+|RU\d+|TBD$/i.test(code);
+}
+
+function teamEntry(team?: FifaTeam): { label: string; flag?: string } | undefined {
+  if (!isConcreteTeam(team)) return undefined;
+  const code = team!.IdCountry!;
+  const label = team!.ShortClubName ?? code;
+  const flag = FIFA_CODE_TO_FLAG[code];
+  return flag ? { label, flag } : { label };
+}
+
+function refreshedGraphScript(matches: FifaMatch[]): string {
+  const teams: Record<string, { label: string; flag?: string }> = {};
+
+  for (const stageId of Object.keys(STAGE_TO_ROUND)) {
+    const round = STAGE_TO_ROUND[stageId];
+    const stageMatches = matches
+      .filter((match: any) => String(match.IdStage) === stageId)
+      .sort((a: any, b: any) => String(a.Date ?? a.LocalDate ?? "").localeCompare(String(b.Date ?? b.LocalDate ?? "")));
+
+    stageMatches.slice(0, round.matches).forEach((match, index) => {
+      const num = String(index + 1).padStart(2, "0");
+      const home = teamEntry(match.Home);
+      const away = teamEntry(match.Away);
+      if (home) teams[`${round.id}-m${num}-home`] = home;
+      if (away) teams[`${round.id}-m${num}-away`] = away;
+    });
+  }
+
+  const teamsLiteral = JSON.stringify(teams, null, 2);
+  return EMBEDDED_GRAPH_SCRIPT.replace(/const teams = \{[\s\S]*?\n\};/, `const teams = ${teamsLiteral};`);
+}
+
+async function generateDiagram(): Promise<void> {
+  console.log("Refreshing bracket structure from FIFA public API...");
+  const matches = await fetchMatches();
+  writeFileSync(GENERATED_GRAPH_SCRIPT, refreshedGraphScript(matches));
+  console.log(`Generating/publishing diagram with refreshed structure via ${GENERATED_GRAPH_SCRIPT}...`);
   run("schematify", ["run", GENERATED_GRAPH_SCRIPT], false);
 }
 
@@ -255,7 +309,7 @@ async function pollOnce(
 }
 
 async function main(): Promise<void> {
-  if (!skipGenerate) generateDiagram();
+  if (!skipGenerate) await generateDiagram();
   const last = new Map<string, ScoreUpdate>();
   const alertUntil = new Map<string, number>();
   const alertTimers = new Map<string, AlertTimer>();

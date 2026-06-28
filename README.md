@@ -2,9 +2,10 @@
 
 Single TypeScript script that:
 
-1. Generates/publishes a Schematify FIFA World Cup 2026 knockout diagram.
-2. Polls FIFA's public match API.
-3. Buffers score changes and publishes one Schematify channel update batch per polling cycle.
+1. Refreshes the bracket structure from FIFA's public API at startup.
+2. Generates/publishes a Schematify FIFA World Cup 2026 knockout diagram.
+3. Polls FIFA's public match API.
+4. Buffers score changes and publishes one Schematify channel update batch per polling cycle.
 
 ## Requirements
 
