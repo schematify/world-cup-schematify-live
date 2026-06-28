@@ -152,6 +152,25 @@ const ALERT_DECAY_MS = 30_000;
 
 type AlertTimer = ReturnType<typeof setTimeout>;
 
+const pendingDecays = new Map<string, ScoreUpdate>();
+let decayFlushTimer: ReturnType<typeof setTimeout> | undefined;
+
+function queueDecayPublish(path: string, update: ScoreUpdate): void {
+  pendingDecays.set(path, update);
+  if (decayFlushTimer) return;
+
+  decayFlushTimer = setTimeout(() => {
+    decayFlushTimer = undefined;
+    const batch = new Map(pendingDecays);
+    pendingDecays.clear();
+    try {
+      publishBatch(batch);
+    } catch (error) {
+      console.error("ERROR publishing alert decay batch:", error instanceof Error ? error.message : error);
+    }
+  }, 1_000);
+}
+
 function rememberUpdate(
   path: string,
   update: ScoreUpdate,
@@ -181,11 +200,7 @@ function rememberUpdate(
       last.set(path, decayed);
       alertUntil.delete(path);
       alertTimers.delete(path);
-      try {
-        publishBatch(new Map([[path, decayed]]));
-      } catch (error) {
-        console.error("ERROR publishing alert decay:", error instanceof Error ? error.message : error);
-      }
+      queueDecayPublish(path, decayed);
     }, ALERT_DECAY_MS));
   } else {
     alertUntil.delete(path);
