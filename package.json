@@ -1,0 +1,15 @@
+{
+  "name": "world-cup-schematify-live",
+  "version": "1.0.0",
+  "private": false,
+  "description": "Generate a Schematify FIFA World Cup 2026 knockout diagram and live-update scores from FIFA public data.",
+  "type": "module",
+  "scripts": {
+    "start": "tsx index.ts --interval 60",
+    "once": "tsx index.ts --once",
+    "dry-run": "tsx index.ts --once --dry-run --skip-generate"
+  },
+  "devDependencies": {
+    "tsx": "^4.22.4"
+  }
+}
