@@ -183,12 +183,12 @@ function decayAlerts(
 async function randomScoresOnce(
   last: Map<string, ScoreUpdate>,
   alertUntil: Map<string, number>,
-  count: number,
+  selectedPaths: string[],
 ): Promise<void> {
   const pending = new Map<string, ScoreUpdate>();
   decayAlerts(last, pending, alertUntil);
 
-  for (const path of pickRandomPaths(count)) {
+  for (const path of selectedPaths) {
     const update = randomScoreUpdate();
     console.log(`${path}: random simulation -> ${update.score} (${update.status})`);
     rememberUpdate(path, update, last, pending, alertUntil);
@@ -228,9 +228,14 @@ async function main(): Promise<void> {
   if (!skipGenerate) generateDiagram();
   const last = new Map<string, ScoreUpdate>();
   const alertUntil = new Map<string, number>();
+  const randomScorePaths = randomScoresCount > 0 ? pickRandomPaths(randomScoresCount) : [];
+  if (randomScorePaths.length > 0) {
+    console.log(`Random score simulation selected ${randomScorePaths.length} match(es) for this session:`);
+    for (const path of randomScorePaths) console.log(`- ${path}`);
+  }
   while (true) {
     try {
-      if (randomScoresCount > 0) await randomScoresOnce(last, alertUntil, randomScoresCount);
+      if (randomScoresCount > 0) await randomScoresOnce(last, alertUntil, randomScorePaths);
       else await pollOnce(last, alertUntil);
     } catch (error) {
       console.error("ERROR:", error instanceof Error ? error.message : error);

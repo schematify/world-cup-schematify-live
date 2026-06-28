@@ -25,7 +25,7 @@ Run once:
 npx github:schematify/world-cup-schematify-live --once
 ```
 
-Simulate random live scores on 3 matches by default. Changed scores use `base/alert` for 60 seconds, then decay to `base/info` while the match remains running:
+Simulate random live scores on 3 matches by default. The matches are selected once at startup and the same score nodes are updated every tick. Changed scores use `base/alert` for 60 seconds, then decay to `base/info` while the match remains running:
 
 ```bash
 npx github:schematify/world-cup-schematify-live --random-scores
