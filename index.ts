@@ -61,6 +61,10 @@ function argValue(name: string, fallback?: string): string | undefined {
 const dryRun = process.argv.includes("--dry-run");
 const once = process.argv.includes("--once");
 const skipGenerate = process.argv.includes("--skip-generate");
+const randomScoresArg = argValue("--random-scores");
+const randomScoresCount = process.argv.includes("--random-scores")
+  ? Math.max(1, Math.min(Number(randomScoresArg ?? "3") || 3, Object.keys(MATCH_PATHS).length))
+  : 0;
 const intervalSeconds = Number(argValue("--interval", "60"));
 
 function run(command: string, args: string[], dryRunPublishOnly = true): void {
@@ -124,6 +128,39 @@ function publishBatch(updates: Map<string, ScoreUpdate>): void {
   run("schematify", ["publish", file], false);
 }
 
+function randomInt(maxInclusive: number): number {
+  return Math.floor(Math.random() * (maxInclusive + 1));
+}
+
+function randomScoreUpdate(): ScoreUpdate {
+  return {
+    score: `${randomInt(4)} / ${randomInt(4)}`,
+    status: "base/alert",
+  };
+}
+
+function pickRandomPaths(count: number): string[] {
+  const paths = Object.values(MATCH_PATHS);
+  for (let i = paths.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [paths[i], paths[j]] = [paths[j], paths[i]];
+  }
+  return paths.slice(0, count);
+}
+
+async function randomScoresOnce(last: Map<string, string>, count: number): Promise<void> {
+  const pending = new Map<string, ScoreUpdate>();
+  for (const path of pickRandomPaths(count)) {
+    const update = randomScoreUpdate();
+    const signature = JSON.stringify(update);
+    if (last.get(path) === signature) continue;
+    console.log(`${path}: random simulation -> ${update.score} (${update.status})`);
+    pending.set(path, update);
+    last.set(path, signature);
+  }
+  publishBatch(pending);
+}
+
 async function pollOnce(last: Map<string, string>): Promise<void> {
   const byId = new Map((await fetchMatches()).map((match) => [String(match.IdMatch), match]));
   const pending = new Map<string, ScoreUpdate>();
@@ -153,7 +190,8 @@ async function main(): Promise<void> {
   const last = new Map<string, string>();
   while (true) {
     try {
-      await pollOnce(last);
+      if (randomScoresCount > 0) await randomScoresOnce(last, randomScoresCount);
+      else await pollOnce(last);
     } catch (error) {
       console.error("ERROR:", error instanceof Error ? error.message : error);
     }

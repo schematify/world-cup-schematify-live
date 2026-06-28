@@ -25,6 +25,18 @@ Run once:
 npx github:schematify/world-cup-schematify-live --once
 ```
 
+Simulate random live scores on 3 matches by default:
+
+```bash
+npx github:schematify/world-cup-schematify-live --random-scores
+```
+
+Simulate random live scores on `n` matches:
+
+```bash
+npx github:schematify/world-cup-schematify-live --random-scores 5
+```
+
 Or clone and run locally:
 
 ```bash
