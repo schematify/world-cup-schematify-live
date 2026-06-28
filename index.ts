@@ -148,22 +148,58 @@ function pickRandomPaths(count: number): string[] {
   return paths.slice(0, count);
 }
 
-async function randomScoresOnce(last: Map<string, string>, count: number): Promise<void> {
+const ALERT_DECAY_MS = 60_000;
+
+function rememberUpdate(
+  path: string,
+  update: ScoreUpdate,
+  last: Map<string, ScoreUpdate>,
+  pending: Map<string, ScoreUpdate>,
+  alertUntil: Map<string, number>,
+): void {
+  const previous = last.get(path);
+  if (previous?.score === update.score && previous?.status === update.status) return;
+  pending.set(path, update);
+  last.set(path, update);
+  if (update.status === "base/alert") alertUntil.set(path, Date.now() + ALERT_DECAY_MS);
+  else alertUntil.delete(path);
+}
+
+function decayAlerts(
+  last: Map<string, ScoreUpdate>,
+  pending: Map<string, ScoreUpdate>,
+  alertUntil: Map<string, number>,
+): void {
+  const now = Date.now();
+  for (const [path, update] of last.entries()) {
+    if (update.status !== "base/alert") continue;
+    if ((alertUntil.get(path) ?? 0) > now) continue;
+    const decayed = { score: update.score, status: "base/info" };
+    console.log(`${path}: alert decayed -> ${decayed.score} (${decayed.status})`);
+    rememberUpdate(path, decayed, last, pending, alertUntil);
+  }
+}
+
+async function randomScoresOnce(
+  last: Map<string, ScoreUpdate>,
+  alertUntil: Map<string, number>,
+  count: number,
+): Promise<void> {
   const pending = new Map<string, ScoreUpdate>();
+  decayAlerts(last, pending, alertUntil);
+
   for (const path of pickRandomPaths(count)) {
     const update = randomScoreUpdate();
-    const signature = JSON.stringify(update);
-    if (last.get(path) === signature) continue;
     console.log(`${path}: random simulation -> ${update.score} (${update.status})`);
-    pending.set(path, update);
-    last.set(path, signature);
+    rememberUpdate(path, update, last, pending, alertUntil);
   }
   publishBatch(pending);
 }
 
-async function pollOnce(last: Map<string, string>): Promise<void> {
+async function pollOnce(last: Map<string, ScoreUpdate>, alertUntil: Map<string, number>): Promise<void> {
   const byId = new Map((await fetchMatches()).map((match) => [String(match.IdMatch), match]));
   const pending = new Map<string, ScoreUpdate>();
+  decayAlerts(last, pending, alertUntil);
 
   for (const [matchId, path] of Object.entries(MATCH_PATHS)) {
     const match = byId.get(matchId);
@@ -171,14 +207,17 @@ async function pollOnce(last: Map<string, string>): Promise<void> {
       console.warn(`WARN: FIFA match ${matchId} not found for ${path}`);
       continue;
     }
-    const update = updateFromMatch(match);
-    const signature = JSON.stringify(update);
-    if (last.get(path) === signature) continue;
+    const rawUpdate = updateFromMatch(match);
+    const previous = last.get(path);
+    const update = rawUpdate.status === "base/alert" && previous?.score === rawUpdate.score
+      ? { score: rawUpdate.score, status: previous.status === "base/alert" ? "base/alert" : "base/info" }
+      : rawUpdate;
     const home = match.Home?.ShortClubName ?? match.Home?.IdCountry ?? "Home";
     const away = match.Away?.ShortClubName ?? match.Away?.IdCountry ?? "Away";
-    console.log(`${path}: ${home} / ${away} -> ${update.score} (${update.status})`);
-    pending.set(path, update);
-    last.set(path, signature);
+    if (previous?.score !== update.score || previous?.status !== update.status) {
+      console.log(`${path}: ${home} / ${away} -> ${update.score} (${update.status})`);
+    }
+    rememberUpdate(path, update, last, pending, alertUntil);
   }
 
   // One API publish per poll interval to avoid rate limits.
@@ -187,11 +226,12 @@ async function pollOnce(last: Map<string, string>): Promise<void> {
 
 async function main(): Promise<void> {
   if (!skipGenerate) generateDiagram();
-  const last = new Map<string, string>();
+  const last = new Map<string, ScoreUpdate>();
+  const alertUntil = new Map<string, number>();
   while (true) {
     try {
-      if (randomScoresCount > 0) await randomScoresOnce(last, randomScoresCount);
-      else await pollOnce(last);
+      if (randomScoresCount > 0) await randomScoresOnce(last, alertUntil, randomScoresCount);
+      else await pollOnce(last, alertUntil);
     } catch (error) {
       console.error("ERROR:", error instanceof Error ? error.message : error);
     }
