@@ -9,10 +9,10 @@
     "once": "tsx index.ts --once",
     "dry-run": "tsx index.ts --once --dry-run --skip-generate"
   },
-  "devDependencies": {
-    "tsx": "^4.22.4"
-  },
   "bin": {
-    "world-cup-schematify-live": "./index.ts"
+    "world-cup-schematify-live": "./cli.cjs"
+  },
+  "dependencies": {
+    "tsx": "^4.22.4"
   }
 }
