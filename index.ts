@@ -284,6 +284,7 @@ async function pollOnce(
 ): Promise<void> {
   const byId = new Map((await fetchMatches()).map((match) => [String(match.IdMatch), match]));
   const pending = new Map<string, ScoreUpdate>();
+  let finalWhistleDetected = false;
 
   for (const [matchId, path] of Object.entries(MATCH_PATHS)) {
     const match = byId.get(matchId);
@@ -301,8 +302,17 @@ async function pollOnce(
     if (previous?.score !== update.score || previous?.status !== update.status) {
       console.log(`${path}: ${home} / ${away} -> ${update.score} (${update.status})`);
     }
+    if (previous && previous.status !== "base/healthy" && update.status === "base/healthy") {
+      finalWhistleDetected = true;
+      console.log(`${path}: final time detected; bracket structure will be refreshed.`);
+    }
     rememberUpdate(path, update, last, pending, alertUntil, alertTimers);
   }
+
+  // If a match just finished, FIFA may now expose later-round participants.
+  // Refresh the structure before publishing the final score batch so the diagram
+  // is semi-live without waiting for a process restart.
+  if (finalWhistleDetected && !skipGenerate) await generateDiagram();
 
   // One API publish per poll interval to avoid rate limits.
   publishBatch(pending);
