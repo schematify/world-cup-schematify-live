@@ -150,56 +150,67 @@ function pickRandomPaths(count: number): string[] {
 
 const ALERT_DECAY_MS = 15_000;
 
+type AlertTimer = ReturnType<typeof setTimeout>;
+
 function rememberUpdate(
   path: string,
   update: ScoreUpdate,
   last: Map<string, ScoreUpdate>,
   pending: Map<string, ScoreUpdate>,
   alertUntil: Map<string, number>,
+  alertTimers: Map<string, AlertTimer>,
 ): void {
   const previous = last.get(path);
   if (previous?.score === update.score && previous?.status === update.status) return;
   pending.set(path, update);
   last.set(path, update);
-  if (update.status === "base/alert") alertUntil.set(path, Date.now() + ALERT_DECAY_MS);
-  else alertUntil.delete(path);
-}
 
-function decayAlerts(
-  last: Map<string, ScoreUpdate>,
-  pending: Map<string, ScoreUpdate>,
-  alertUntil: Map<string, number>,
-): void {
-  const now = Date.now();
-  for (const [path, update] of last.entries()) {
-    if (update.status !== "base/alert") continue;
-    if ((alertUntil.get(path) ?? 0) > now) continue;
-    const decayed = { score: update.score, status: "base/info" };
-    console.log(`${path}: alert decayed -> ${decayed.score} (${decayed.status})`);
-    rememberUpdate(path, decayed, last, pending, alertUntil);
+  const existingTimer = alertTimers.get(path);
+  if (existingTimer) clearTimeout(existingTimer);
+  alertTimers.delete(path);
+
+  if (update.status === "base/alert") {
+    alertUntil.set(path, Date.now() + ALERT_DECAY_MS);
+    alertTimers.set(path, setTimeout(() => {
+      const current = last.get(path);
+      if (!current || current.status !== "base/alert") return;
+      if ((alertUntil.get(path) ?? 0) > Date.now()) return;
+
+      const decayed = { score: current.score, status: "base/info" };
+      console.log(`${path}: alert decayed -> ${decayed.score} (${decayed.status})`);
+      last.set(path, decayed);
+      alertUntil.delete(path);
+      alertTimers.delete(path);
+      publishBatch(new Map([[path, decayed]]));
+    }, ALERT_DECAY_MS));
+  } else {
+    alertUntil.delete(path);
   }
 }
 
 async function randomScoresOnce(
   last: Map<string, ScoreUpdate>,
   alertUntil: Map<string, number>,
+  alertTimers: Map<string, AlertTimer>,
   selectedPaths: string[],
 ): Promise<void> {
   const pending = new Map<string, ScoreUpdate>();
-  decayAlerts(last, pending, alertUntil);
 
   for (const path of selectedPaths) {
     const update = randomScoreUpdate();
     console.log(`${path}: random simulation -> ${update.score} (${update.status})`);
-    rememberUpdate(path, update, last, pending, alertUntil);
+    rememberUpdate(path, update, last, pending, alertUntil, alertTimers);
   }
   publishBatch(pending);
 }
 
-async function pollOnce(last: Map<string, ScoreUpdate>, alertUntil: Map<string, number>): Promise<void> {
+async function pollOnce(
+  last: Map<string, ScoreUpdate>,
+  alertUntil: Map<string, number>,
+  alertTimers: Map<string, AlertTimer>,
+): Promise<void> {
   const byId = new Map((await fetchMatches()).map((match) => [String(match.IdMatch), match]));
   const pending = new Map<string, ScoreUpdate>();
-  decayAlerts(last, pending, alertUntil);
 
   for (const [matchId, path] of Object.entries(MATCH_PATHS)) {
     const match = byId.get(matchId);
@@ -217,7 +228,7 @@ async function pollOnce(last: Map<string, ScoreUpdate>, alertUntil: Map<string, 
     if (previous?.score !== update.score || previous?.status !== update.status) {
       console.log(`${path}: ${home} / ${away} -> ${update.score} (${update.status})`);
     }
-    rememberUpdate(path, update, last, pending, alertUntil);
+    rememberUpdate(path, update, last, pending, alertUntil, alertTimers);
   }
 
   // One API publish per poll interval to avoid rate limits.
@@ -228,6 +239,7 @@ async function main(): Promise<void> {
   if (!skipGenerate) generateDiagram();
   const last = new Map<string, ScoreUpdate>();
   const alertUntil = new Map<string, number>();
+  const alertTimers = new Map<string, AlertTimer>();
   const randomScorePaths = randomScoresCount > 0 ? pickRandomPaths(randomScoresCount) : [];
   if (randomScorePaths.length > 0) {
     console.log(`Random score simulation selected ${randomScorePaths.length} match(es) for this session:`);
@@ -235,8 +247,8 @@ async function main(): Promise<void> {
   }
   while (true) {
     try {
-      if (randomScoresCount > 0) await randomScoresOnce(last, alertUntil, randomScorePaths);
-      else await pollOnce(last, alertUntil);
+      if (randomScoresCount > 0) await randomScoresOnce(last, alertUntil, alertTimers, randomScorePaths);
+      else await pollOnce(last, alertUntil, alertTimers);
     } catch (error) {
       console.error("ERROR:", error instanceof Error ? error.message : error);
     }
