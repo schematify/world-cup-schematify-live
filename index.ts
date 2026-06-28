@@ -44,6 +44,9 @@ const MATCH_PATHS: Record<string, string> = {
 type FifaTeam = { IdCountry?: string; ShortClubName?: string };
 type FifaMatch = {
   IdMatch: string | number;
+  IdStage?: string | number;
+  Date?: string;
+  LocalDate?: string;
   Home?: FifaTeam;
   Away?: FifaTeam;
   HomeTeamScore?: number | null;
@@ -106,26 +109,66 @@ function teamEntry(team?: FifaTeam): { label: string; flag?: string } | undefine
   return flag ? { label, flag } : { label };
 }
 
+function formatMatchTime(match: FifaMatch): string {
+  const rawDate = match.Date ?? match.LocalDate;
+  if (!rawDate) return "";
+  const date = new Date(rawDate);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const now = new Date();
+  const sameLocalDay = date.getFullYear() === now.getFullYear()
+    && date.getMonth() === now.getMonth()
+    && date.getDate() === now.getDate();
+
+  const time = new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+
+  if (sameLocalDay) return `Today ${time}`;
+
+  const day = new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }).format(date);
+  return `${day} ${time}`;
+}
+
 function refreshedGraphScript(matches: FifaMatch[]): string {
   const teams: Record<string, { label: string; flag?: string }> = {};
+  const matchLabels: Record<string, string> = {};
 
   for (const stageId of Object.keys(STAGE_TO_ROUND)) {
     const round = STAGE_TO_ROUND[stageId];
     const stageMatches = matches
-      .filter((match: any) => String(match.IdStage) === stageId)
-      .sort((a: any, b: any) => String(a.Date ?? a.LocalDate ?? "").localeCompare(String(b.Date ?? b.LocalDate ?? "")));
+      .filter((match) => String(match.IdStage) === stageId)
+      .sort((a, b) => String(a.Date ?? a.LocalDate ?? "").localeCompare(String(b.Date ?? b.LocalDate ?? "")));
 
     stageMatches.slice(0, round.matches).forEach((match, index) => {
       const num = String(index + 1).padStart(2, "0");
+      const matchKey = `${round.id}-m${num}`;
       const home = teamEntry(match.Home);
       const away = teamEntry(match.Away);
-      if (home) teams[`${round.id}-m${num}-home`] = home;
-      if (away) teams[`${round.id}-m${num}-away`] = away;
+      if (home) teams[`${matchKey}-home`] = home;
+      if (away) teams[`${matchKey}-away`] = away;
+
+      const pairing = home && away ? `${home.label} / ${away.label}` : `Match ${index + 1}`;
+      const time = formatMatchTime(match);
+      matchLabels[matchKey] = time ? `${pairing} - ${time}` : pairing;
     });
   }
 
   const teamsLiteral = JSON.stringify(teams, null, 2);
-  return EMBEDDED_GRAPH_SCRIPT.replace(/const teams = \{[\s\S]*?\n\};/, `const teams = ${teamsLiteral};`);
+  const matchLabelsLiteral = JSON.stringify(matchLabels, null, 2);
+  return EMBEDDED_GRAPH_SCRIPT
+    .replace(/const teams = \{[\s\S]*?\n\};/, `const teams = ${teamsLiteral};\n\nconst matchLabels = ${matchLabelsLiteral};`)
+    .replace(
+      /function matchLabel\(index, homeId, awayId\) \{[\s\S]*?\n\}/,
+      `function matchLabel(index, matchId, homeId, awayId) {\n  if (matchLabels[matchId]) return matchLabels[matchId];\n  const home = teams[homeId]?.label || "TBD";\n  const away = teams[awayId]?.label || "TBD";\n  if (home === "TBD" && away === "TBD") return \`Match \${index}\`;\n  return \`\${home} / \${away}\`;\n}`,
+    )
+    .replace(".label(matchLabel(index, homeId, awayId))", ".label(matchLabel(index, `${roundId}-${id}`, homeId, awayId))");
 }
 
 async function generateDiagram(): Promise<void> {

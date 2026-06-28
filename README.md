@@ -2,7 +2,7 @@
 
 Single TypeScript script that:
 
-1. Refreshes the bracket structure from FIFA's public API at startup.
+1. Refreshes the bracket structure from FIFA's public API at startup, including local match date/time in match labels.
 2. Generates/publishes a Schematify FIFA World Cup 2026 knockout diagram.
 3. Polls FIFA's public match API.
 4. Detects final-time score transitions and refreshes the bracket structure semi-live.
