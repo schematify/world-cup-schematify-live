@@ -13,21 +13,22 @@ Single TypeScript script that:
 
 ## Usage
 
-Install dependencies:
+Run directly with `npx`. With no flags, it generates the diagram and then polls every 60 seconds:
 
 ```bash
-npm install
+npx github:schematify/world-cup-schematify-live
 ```
 
 Run once:
 
 ```bash
-npm run once
+npx github:schematify/world-cup-schematify-live --once
 ```
 
-Run continuously, polling every 60 seconds:
+Or clone and run locally:
 
 ```bash
+npm install
 npm start
 ```
 
