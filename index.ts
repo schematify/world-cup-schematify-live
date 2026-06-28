@@ -148,7 +148,7 @@ function pickRandomPaths(count: number): string[] {
   return paths.slice(0, count);
 }
 
-const ALERT_DECAY_MS = 60_000;
+const ALERT_DECAY_MS = 15_000;
 
 function rememberUpdate(
   path: string,
