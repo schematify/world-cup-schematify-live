@@ -148,7 +148,7 @@ function pickRandomPaths(count: number): string[] {
   return paths.slice(0, count);
 }
 
-const ALERT_DECAY_MS = 15_000;
+const ALERT_DECAY_MS = 30_000;
 
 type AlertTimer = ReturnType<typeof setTimeout>;
 
@@ -181,7 +181,11 @@ function rememberUpdate(
       last.set(path, decayed);
       alertUntil.delete(path);
       alertTimers.delete(path);
-      publishBatch(new Map([[path, decayed]]));
+      try {
+        publishBatch(new Map([[path, decayed]]));
+      } catch (error) {
+        console.error("ERROR publishing alert decay:", error instanceof Error ? error.message : error);
+      }
     }, ALERT_DECAY_MS));
   } else {
     alertUntil.delete(path);
